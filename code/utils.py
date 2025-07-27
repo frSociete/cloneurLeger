@@ -221,7 +221,7 @@ def get_active_disk():
                                 match = re.search(r'/dev/([a-zA-Z]+\d*[a-zA-Z]*\d*)', device)
                                 if match:
                                     devices.add(match.group(1))
-                except (FileNotFoundError, CalledProcessError) as e:
+                except (FileNotFoundError, subprocess.CalledProcessError) as e:
                     log_error(f"Error running df command: {str(e)}")
         
         else:
@@ -267,7 +267,7 @@ def get_active_disk():
                             if match:
                                 devices.add(match.group(1))
                                 live_boot_found = True
-            except (FileNotFoundError, CalledProcessError) as e:
+            except (FileNotFoundError, subprocess.CalledProcessError) as e:
                 pass  # Not critical
 
         # Step 4: Return logic
@@ -294,7 +294,7 @@ def get_active_disk():
     except OSError as e:
         log_error(f"OS error accessing system information: {str(e)}")
         return None
-    except CalledProcessError as e:
+    except subprocess.CalledProcessError as e:
         log_error(f"Error running command: {str(e)}")
         return None
     except (IndexError, ValueError) as e:
