@@ -8,7 +8,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Optional, Dict, List, Set
-from subprocess import CalledProcessError
+from subprocess import CalledProcessError, TimeoutExpired
 
 # Import functions from existing modules
 from utils import get_disk_list, get_base_disk, get_active_disk, get_disk_serial, is_ssd, run_command, run_command_with_progress
@@ -240,8 +240,16 @@ class DiskClonerGUI:
                     # Change color for active disks
                     self.dest_listbox.itemconfig(tk.END, {'fg': 'red'})
                     
-            except Exception as e:
-                self.update_log(f"Error getting info for {device_name}: {str(e)}")
+            except (OSError, IOError) as e:
+                self.update_log(f"I/O error getting info for {device_name}: {str(e)}")
+            except (CalledProcessError, subprocess.SubprocessError) as e:
+                self.update_log(f"Command error getting info for {device_name}: {str(e)}")
+            except (ValueError, TypeError) as e:
+                self.update_log(f"Data error getting info for {device_name}: {str(e)}")
+            except FileNotFoundError as e:
+                self.update_log(f"File not found error for {device_name}: {str(e)}")
+            except PermissionError as e:
+                self.update_log(f"Permission error for {device_name}: {str(e)}")
         
         # Update warning messages
         if self.active_disks:
@@ -338,8 +346,16 @@ class DiskClonerGUI:
                     disk_type = "SSD" if is_device_ssd else "HDD"
                     info = f"Selected: {disk_serial}\nType: {disk_type}\nSize: {source_disk['size']}\nModel: {source_disk['model']}"
                     self.source_info_var.set(info)
-                except Exception as e:
-                    self.source_info_var.set(f"Selected: {source_device}\nError getting details: {str(e)}")
+                except (OSError, IOError) as e:
+                    self.source_info_var.set(f"Selected: {source_device}\nI/O error getting details: {str(e)}")
+                except (CalledProcessError, subprocess.SubprocessError) as e:
+                    self.source_info_var.set(f"Selected: {source_device}\nCommand error getting details: {str(e)}")
+                except (ValueError, TypeError) as e:
+                    self.source_info_var.set(f"Selected: {source_device}\nData error getting details: {str(e)}")
+                except FileNotFoundError as e:
+                    self.source_info_var.set(f"Selected: {source_device}\nFile not found: {str(e)}")
+                except PermissionError as e:
+                    self.source_info_var.set(f"Selected: {source_device}\nPermission denied: {str(e)}")
         else:
             self.source_info_var.set("No source disk selected")
         
@@ -354,8 +370,16 @@ class DiskClonerGUI:
                     disk_type = "SSD" if is_device_ssd else "HDD"
                     info = f"Selected: {disk_serial}\nType: {disk_type}\nSize: {dest_disk['size']}\nModel: {dest_disk['model']}"
                     self.dest_info_var.set(info)
-                except Exception as e:
-                    self.dest_info_var.set(f"Selected: {dest_device}\nError getting details: {str(e)}")
+                except (OSError, IOError) as e:
+                    self.dest_info_var.set(f"Selected: {dest_device}\nI/O error getting details: {str(e)}")
+                except (CalledProcessError, subprocess.SubprocessError) as e:
+                    self.dest_info_var.set(f"Selected: {dest_device}\nCommand error getting details: {str(e)}")
+                except (ValueError, TypeError) as e:
+                    self.dest_info_var.set(f"Selected: {dest_device}\nData error getting details: {str(e)}")
+                except FileNotFoundError as e:
+                    self.dest_info_var.set(f"Selected: {dest_device}\nFile not found: {str(e)}")
+                except PermissionError as e:
+                    self.dest_info_var.set(f"Selected: {dest_device}\nPermission denied: {str(e)}")
         else:
             self.dest_info_var.set("No destination disk selected")
     
@@ -381,7 +405,8 @@ class DiskClonerGUI:
         try:
             source_serial = get_disk_serial(source_device.replace('/dev/', ''))
             dest_serial = get_disk_serial(dest_device.replace('/dev/', ''))
-        except Exception as e:
+        except (OSError, IOError, CalledProcessError, subprocess.SubprocessError, 
+                FileNotFoundError, PermissionError):
             source_serial = source_device
             dest_serial = dest_device
         
@@ -438,12 +463,48 @@ class DiskClonerGUI:
                 self.update_log("Clone operation completed successfully!")
                 messagebox.showinfo("Success", "Disk clone completed successfully!")
         
-        except Exception as e:
-            error_msg = f"Clone operation failed: {str(e)}"
-            self.status_var.set("Clone operation failed!")
+        except (OSError, IOError) as e:
+            error_msg = f"I/O error during clone operation: {str(e)}"
+            self.status_var.set("Clone operation failed - I/O error!")
             self.update_log(error_msg)
             log_error(error_msg)
-            messagebox.showerror("Error", error_msg)
+            messagebox.showerror("I/O Error", error_msg)
+        except (CalledProcessError, subprocess.SubprocessError) as e:
+            error_msg = f"Command execution failed during clone: {str(e)}"
+            self.status_var.set("Clone operation failed - Command error!")
+            self.update_log(error_msg)
+            log_error(error_msg)
+            messagebox.showerror("Command Error", error_msg)
+        except FileNotFoundError as e:
+            error_msg = f"Required file or command not found: {str(e)}"
+            self.status_var.set("Clone operation failed - File not found!")
+            self.update_log(error_msg)
+            log_error(error_msg)
+            messagebox.showerror("File Not Found", error_msg)
+        except PermissionError as e:
+            error_msg = f"Permission denied during clone operation: {str(e)}"
+            self.status_var.set("Clone operation failed - Permission denied!")
+            self.update_log(error_msg)
+            log_error(error_msg)
+            messagebox.showerror("Permission Error", error_msg)
+        except TimeoutExpired as e:
+            error_msg = f"Clone operation timed out: {str(e)}"
+            self.status_var.set("Clone operation failed - Timeout!")
+            self.update_log(error_msg)
+            log_error(error_msg)
+            messagebox.showerror("Timeout Error", error_msg)
+        except KeyboardInterrupt:
+            error_msg = "Clone operation interrupted by user"
+            self.status_var.set("Clone operation interrupted!")
+            self.update_log(error_msg)
+            log_error(error_msg)
+            messagebox.showwarning("Interrupted", error_msg)
+        except MemoryError as e:
+            error_msg = f"Insufficient memory for clone operation: {str(e)}"
+            self.status_var.set("Clone operation failed - Memory error!")
+            self.update_log(error_msg)
+            log_error(error_msg)
+            messagebox.showerror("Memory Error", error_msg)
         
         finally:
             self.is_cloning = False
@@ -479,8 +540,16 @@ class DiskClonerGUI:
             run_command_with_progress(cmd, progress_callback, stop_flag)
             self.progress_var.set(100)
             self.update_log("Full clone completed successfully")
-        except Exception as e:
-            raise Exception(f"Full clone failed: {str(e)}")
+        except (CalledProcessError, subprocess.SubprocessError) as e:
+            raise subprocess.SubprocessError(f"Full clone command failed: {str(e)}")
+        except (OSError, IOError) as e:
+            raise IOError(f"I/O error during full clone: {str(e)}")
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"dd command not found: {str(e)}")
+        except PermissionError as e:
+            raise PermissionError(f"Permission denied during full clone: {str(e)}")
+        except TimeoutExpired as e:
+            raise TimeoutExpired(cmd, None, f"Full clone timed out: {str(e)}")
     
     def smart_clone(self, source: str, dest: str) -> None:
         """Perform smart clone using partclone or similar"""
@@ -525,9 +594,15 @@ class DiskClonerGUI:
                 messagebox.showwarning("Verification Failed", 
                                      "Clone verification failed! The disks are not identical.")
             else:
-                raise Exception(f"Verification command failed: {e.stderr}")
-        except Exception as e:
-            raise Exception(f"Verification failed: {str(e)}")
+                raise CalledProcessError(e.returncode, cmd, f"Verification command failed: {e.stderr}")
+        except (OSError, IOError) as e:
+            raise IOError(f"I/O error during verification: {str(e)}")
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"cmp command not found: {str(e)}")
+        except PermissionError as e:
+            raise PermissionError(f"Permission denied during verification: {str(e)}")
+        except TimeoutExpired as e:
+            raise TimeoutExpired(cmd, None, f"Verification timed out: {str(e)}")
     
     def stop_clone(self) -> None:
         """Stop the cloning process"""
