@@ -11,9 +11,7 @@ from typing import Optional, Dict, List, Set
 from subprocess import CalledProcessError
 
 # Import functions from existing modules
-from utils import get_disk_list, get_base_disk
-from disk_erase import get_disk_serial, is_ssd
-from disk_operations import get_active_disk
+from utils import get_disk_list, get_base_disk, get_active_disk, get_disk_serial, is_ssd, run_command, run_command_with_progress
 from log_handler import log_info, log_error
 
 class DiskClonerGUI:
@@ -222,7 +220,7 @@ class DiskClonerGUI:
             try:
                 disk_serial = get_disk_serial(device_name)
                 is_device_ssd = is_ssd(device_name)
-                ssd_indicator = " (SSD)" if is_device_ssd else " (HDD)"
+                ssd_indicator = " (Electronic)" if is_device_ssd else " (Mechanic)"
                 
                 # Check if this is an active disk
                 is_active = base_device in self.active_disks
@@ -469,7 +467,20 @@ class DiskClonerGUI:
             "status=progress"
         ]
         
-        self.run_dd_command(cmd, "Full clone")
+        def progress_callback():
+            current_progress = self.progress_var.get()
+            if current_progress < 90:  # Don't reach 100% until actually done
+                self.progress_var.set(current_progress + 1)
+        
+        def stop_flag():
+            return not self.is_cloning
+        
+        try:
+            run_command_with_progress(cmd, progress_callback, stop_flag)
+            self.progress_var.set(100)
+            self.update_log("Full clone completed successfully")
+        except Exception as e:
+            raise Exception(f"Full clone failed: {str(e)}")
     
     def smart_clone(self, source: str, dest: str) -> None:
         """Perform smart clone using partclone or similar"""
@@ -496,8 +507,17 @@ class DiskClonerGUI:
             dest
         ]
         
+        def progress_callback():
+            current_progress = self.progress_var.get()
+            if current_progress < 90:
+                self.progress_var.set(current_progress + 2)
+        
+        def stop_flag():
+            return not self.is_cloning
+        
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            run_command_with_progress(cmd, progress_callback, stop_flag)
+            self.progress_var.set(100)
             self.update_log("Clone verification completed successfully - disks are identical")
         except CalledProcessError as e:
             if e.returncode == 1:
@@ -506,39 +526,8 @@ class DiskClonerGUI:
                                      "Clone verification failed! The disks are not identical.")
             else:
                 raise Exception(f"Verification command failed: {e.stderr}")
-    
-    def run_dd_command(self, cmd: List[str], operation_name: str) -> None:
-        """Run dd command with progress monitoring"""
-        try:
-            # Start dd process
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, 
-                                     stderr=subprocess.PIPE, text=True)
-            
-            # Monitor progress (this is simplified - real implementation would parse dd output)
-            while process.poll() is None and self.is_cloning:
-                time.sleep(1)
-                # Update progress (simplified - real implementation would calculate from dd output)
-                current_progress = self.progress_var.get()
-                if current_progress < 90:  # Don't reach 100% until actually done
-                    self.progress_var.set(current_progress + 1)
-            
-            if not self.is_cloning:
-                # User cancelled
-                process.terminate()
-                process.wait()
-                raise Exception("Operation cancelled by user")
-            
-            # Wait for completion
-            stdout, stderr = process.communicate()
-            
-            if process.returncode != 0:
-                raise Exception(f"dd command failed: {stderr}")
-            
-            self.progress_var.set(100)
-            self.update_log(f"{operation_name} completed successfully")
-            
         except Exception as e:
-            raise Exception(f"{operation_name} failed: {str(e)}")
+            raise Exception(f"Verification failed: {str(e)}")
     
     def stop_clone(self) -> None:
         """Stop the cloning process"""
