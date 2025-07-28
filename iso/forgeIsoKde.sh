@@ -4,7 +4,7 @@
 set -e
 
 # Variables
-ISO_NAME="shadowClone-v0.1.iso"
+ISO_NAME="$(pwd)shadowClone-v0.1.iso"
 WORK_DIR="$(pwd)/debian-live-build"
 CODE_DIR="$(pwd)/../code"
 
@@ -238,7 +238,7 @@ echo "Building the ISO..."
 sudo lb build
 
 # Move the ISO
-mv live-image-amd64.hybrid.iso "$HOME/$ISO_NAME"
+mv live-image-amd64.hybrid.iso "$ISO_NAME"
 
 # Cleanup
 sudo lb clean
