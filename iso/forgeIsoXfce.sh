@@ -4,9 +4,9 @@
 set -e
 
 # Variables
-ISO_NAME="diskEraser-v5.3.iso"
-WORK_DIR="$HOME/debian-live-build"
-CODE_DIR="$HOME/diskEraser/code"
+ISO_NAME="shadowClone-v0.1.iso"
+WORK_DIR="$(pwd)/debian-live-build"
+CODE_DIR="$(pwd)/../code"
 
 # Install necessary tools
 echo "Installing live-build and required dependencies..."
