@@ -1,12 +1,10 @@
 import logging
 import sys
 
-# Define the log file path
+# Chemin du fichier log
 log_file = "/var/log/disk_erase.log"
 
-# Configure logging with basic format
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -17,18 +15,14 @@ try:
     log_handler.setFormatter(formatter)
     logger.addHandler(log_handler)
 except PermissionError:
-    print("Error: Permission denied. Please run the script with sudo.", file=sys.stderr)
-    sys.exit(1)  # Exit the script to enforce sudo usage
-
+    print("Erreur : Permission refusée. Merci de lancer le script avec sudo.", file=sys.stderr)
+    sys.exit(1)
 
 def log_info(message: str) -> None:
-    """Log general information to both the console and log file."""
     logger.info(message)
 
 def log_error(message: str) -> None:
-    """Log error message to both the console and log file."""
     logger.error(message)
 
 def log_warning(message: str) -> None:
-    """Log warning message to both the console and log file."""
     logger.warning(message)

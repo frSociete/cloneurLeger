@@ -10,261 +10,200 @@ from tkinter import ttk, messagebox
 from typing import Optional, Dict, List, Set
 from subprocess import CalledProcessError, TimeoutExpired
 
-# Import functions from existing modules
 from utils import get_disk_list, get_base_disk, get_active_disk, get_disk_serial, is_ssd, run_command, run_command_with_progress
 from log_handler import log_info, log_error
 
 class DiskClonerGUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("Secure Disk Cloner")
+        self.root.title("Clonage Disque Sécurisé")
         self.root.geometry("800x600")
-        # Set fullscreen mode
         self.root.attributes("-fullscreen", True)
-        
-        # Variables for disk selection
+
         self.source_disk_var = tk.StringVar()
         self.dest_disk_var = tk.StringVar()
-        self.clone_method_var = tk.StringVar(value="full")  # full or smart
+        self.clone_method_var = tk.StringVar(value="full")
         self.verify_clone_var = tk.BooleanVar(value=True)
-        
-        # Data storage
+
         self.disks: List[Dict[str, str]] = []
         self.active_disks: Set[str] = set()
         self.is_cloning = False
-        
-        # Check for root privileges
+
         if os.geteuid() != 0:
-            messagebox.showerror("Error", "This program must be run as root!")
+            messagebox.showerror("Erreur", "Ce programme doit être lancé en tant que root !")
             root.destroy()
             sys.exit(1)
-        
+
         self.create_widgets()
         self.refresh_disks()
-    
+
     def create_widgets(self) -> None:
-        # Main frame
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Title
-        title_label = ttk.Label(main_frame, text="Secure Disk Cloner", font=("Arial", 16, "bold"))
+
+        title_label = ttk.Label(main_frame, text="Clonage Disque Sécurisé", font=("Arial", 16, "bold"))
         title_label.pack(pady=10)
-        
-        # Top frame for disk selection
+
         selection_frame = ttk.Frame(main_frame)
         selection_frame.pack(fill=tk.BOTH, expand=True, pady=10)
-        
-        # Source disk frame
-        source_frame = ttk.LabelFrame(selection_frame, text="Source Disk (Clone From)")
+
+        source_frame = ttk.LabelFrame(selection_frame, text="Disque Source (Cloner depuis)")
         source_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
-        
-        # Source disk listbox with scrollbar
+
         source_list_frame = ttk.Frame(source_frame)
         source_list_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
+
         self.source_listbox = tk.Listbox(source_list_frame, selectmode=tk.SINGLE, height=8)
         source_scrollbar = ttk.Scrollbar(source_list_frame, orient=tk.VERTICAL, command=self.source_listbox.yview)
         self.source_listbox.configure(yscrollcommand=source_scrollbar.set)
-        self.source_listbox.bind('<<ListboxSelect>>', self.on_source_select)
-        
+        self.source_listbox.bind('<ButtonRelease-1>', self.on_source_select)
         self.source_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         source_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # Source disk info
-        self.source_info_var = tk.StringVar(value="No source disk selected")
-        source_info_label = ttk.Label(source_frame, textvariable=self.source_info_var, 
-                                     wraplength=300, justify=tk.LEFT)
+
+        self.source_info_var = tk.StringVar(value="Aucun disque source sélectionné")
+        source_info_label = ttk.Label(source_frame, textvariable=self.source_info_var,
+            wraplength=300, justify=tk.LEFT)
         source_info_label.pack(pady=5)
-        
-        # Destination disk frame
-        dest_frame = ttk.LabelFrame(selection_frame, text="Destination Disk (Clone To)")
+
+        dest_frame = ttk.LabelFrame(selection_frame, text="Disque Destination (Cloner vers)")
         dest_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5)
-        
-        # Destination disk listbox with scrollbar
+
         dest_list_frame = ttk.Frame(dest_frame)
         dest_list_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
+
         self.dest_listbox = tk.Listbox(dest_list_frame, selectmode=tk.SINGLE, height=8)
         dest_scrollbar = ttk.Scrollbar(dest_list_frame, orient=tk.VERTICAL, command=self.dest_listbox.yview)
         self.dest_listbox.configure(yscrollcommand=dest_scrollbar.set)
-        self.dest_listbox.bind('<<ListboxSelect>>', self.on_dest_select)
-        
+        self.dest_listbox.bind('<ButtonRelease-1>', self.on_dest_select)
         self.dest_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         dest_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # Destination disk info
-        self.dest_info_var = tk.StringVar(value="No destination disk selected")
-        dest_info_label = ttk.Label(dest_frame, textvariable=self.dest_info_var, 
-                                   wraplength=300, justify=tk.LEFT)
+
+        self.dest_info_var = tk.StringVar(value="Aucun disque de destination sélectionné")
+        dest_info_label = ttk.Label(dest_frame, textvariable=self.dest_info_var,
+            wraplength=300, justify=tk.LEFT)
         dest_info_label.pack(pady=5)
-        
-        # Warning labels
+
         self.source_warning_var = tk.StringVar()
-        source_warning_label = ttk.Label(source_frame, textvariable=self.source_warning_var, 
-                                        foreground="red", wraplength=300)
+        source_warning_label = ttk.Label(source_frame, textvariable=self.source_warning_var,
+            foreground="red", wraplength=300)
         source_warning_label.pack(pady=2)
-        
         self.dest_warning_var = tk.StringVar()
-        dest_warning_label = ttk.Label(dest_frame, textvariable=self.dest_warning_var, 
-                                      foreground="red", wraplength=300)
+        dest_warning_label = ttk.Label(dest_frame, textvariable=self.dest_warning_var,
+            foreground="red", wraplength=300)
         dest_warning_label.pack(pady=2)
-        
-        # Options frame
-        options_frame = ttk.LabelFrame(main_frame, text="Clone Options")
+
+        options_frame = ttk.LabelFrame(main_frame, text="Options de clonage")
         options_frame.pack(fill=tk.X, pady=10)
-        
-        # Clone method options
+
         method_frame = ttk.Frame(options_frame)
         method_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        ttk.Label(method_frame, text="Clone Method:").pack(side=tk.LEFT, padx=5)
-        
-        ttk.Radiobutton(method_frame, text="Full Clone (bit-by-bit)", 
-                       value="full", variable=self.clone_method_var).pack(side=tk.LEFT, padx=10)
-        ttk.Radiobutton(method_frame, text="Smart Clone (used sectors only)", 
-                       value="smart", variable=self.clone_method_var).pack(side=tk.LEFT, padx=10)
-        
-        # Verify option
+        ttk.Label(method_frame, text="Méthode de clonage :").pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(method_frame, text="Clonage Complet (bit-à-bit)",
+                value="full", variable=self.clone_method_var).pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(method_frame, text="Clonage Intelligent (seulement les secteurs utilisés)",
+                value="smart", variable=self.clone_method_var).pack(side=tk.LEFT, padx=10)
+
         verify_frame = ttk.Frame(options_frame)
         verify_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        ttk.Checkbutton(verify_frame, text="Verify clone after completion", 
-                       variable=self.verify_clone_var).pack(side=tk.LEFT, padx=5)
-        
-        # Control buttons frame
+        ttk.Checkbutton(verify_frame, text="Vérifier le clone après la fin",
+            variable=self.verify_clone_var).pack(side=tk.LEFT, padx=5)
+
         control_frame = ttk.Frame(options_frame)
         control_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        # Refresh button
-        ttk.Button(control_frame, text="Refresh Disks", 
-                  command=self.refresh_disks).pack(side=tk.LEFT, padx=5)
-        
-        # Start clone button
-        self.start_button = ttk.Button(control_frame, text="Start Clone", 
-                                      command=self.start_clone)
+
+        ttk.Button(control_frame, text="Rafraîchir les disques",
+            command=self.refresh_disks).pack(side=tk.LEFT, padx=5)
+        self.start_button = ttk.Button(control_frame, text="Démarrer le clonage",
+            command=self.start_clone)
         self.start_button.pack(side=tk.LEFT, padx=5)
-        
-        # Stop clone button
-        self.stop_button = ttk.Button(control_frame, text="Stop Clone", 
-                                     command=self.stop_clone, state=tk.DISABLED)
+        self.stop_button = ttk.Button(control_frame, text="Arrêter le clonage",
+            command=self.stop_clone, state=tk.DISABLED)
         self.stop_button.pack(side=tk.LEFT, padx=5)
-        
-        # Exit fullscreen button
-        ttk.Button(control_frame, text="Exit Fullscreen", 
-                  command=self.toggle_fullscreen).pack(side=tk.RIGHT, padx=5)
-        
-        # Exit button
-        ttk.Button(control_frame, text="Exit", 
-                  command=self.exit_application).pack(side=tk.RIGHT, padx=5)
-        
-        # Progress frame
-        progress_frame = ttk.LabelFrame(main_frame, text="Progress")
+        ttk.Button(control_frame, text="Quitter le mode plein écran",
+            command=self.toggle_fullscreen).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(control_frame, text="Quitter",
+            command=self.exit_application).pack(side=tk.RIGHT, padx=5)
+
+        progress_frame = ttk.LabelFrame(main_frame, text="Progression")
         progress_frame.pack(fill=tk.X, pady=10)
-        
         self.progress_var = tk.DoubleVar()
-        self.progress = ttk.Progressbar(progress_frame, variable=self.progress_var, 
-                                       maximum=100, mode='determinate')
+        self.progress = ttk.Progressbar(progress_frame, variable=self.progress_var,
+            maximum=100, mode='determinate')
         self.progress.pack(fill=tk.X, padx=10, pady=5)
-        
-        self.status_var = tk.StringVar(value="Ready")
+        self.status_var = tk.StringVar(value="Prêt")
         status_label = ttk.Label(progress_frame, textvariable=self.status_var)
         status_label.pack(pady=5)
-        
-        # Log frame
-        log_frame = ttk.LabelFrame(main_frame, text="Log")
+
+        log_frame = ttk.LabelFrame(main_frame, text="Journal")
         log_frame.pack(fill=tk.BOTH, expand=True, pady=10)
-        
         self.log_text = tk.Text(log_frame, height=8, wrap=tk.WORD)
         log_scrollbar = ttk.Scrollbar(log_frame, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=log_scrollbar.set)
-        
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
         log_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # Window close protocol
+
         self.root.protocol("WM_DELETE_WINDOW", self.exit_application)
-    
+
     def refresh_disks(self) -> None:
-        """Refresh the list of available disks"""
-        self.update_log("Refreshing disk list...")
-        
-        # Clear existing selections
+        self.update_log("Rafraîchissement de la liste des disques...")
         self.source_listbox.delete(0, tk.END)
         self.dest_listbox.delete(0, tk.END)
         self.source_disk_var.set("")
         self.dest_disk_var.set("")
-        
-        # Get disk list and active disks
+
         self.disks = get_disk_list()
         active_disk_list = get_active_disk()
-        
         if active_disk_list:
-            # Convert to base disk names and store as set
             self.active_disks = {get_base_disk(disk) for disk in active_disk_list}
-            log_info(f"Active disks detected: {self.active_disks}")
+            log_info(f"Disques actifs détectés : {self.active_disks}")
         else:
             self.active_disks = set()
-        
+
         if not self.disks:
-            self.update_log("No disks found.")
-            self.source_warning_var.set("No disks available")
-            self.dest_warning_var.set("No disks available")
+            self.update_log("Aucun disque trouvé.")
+            self.source_warning_var.set("Aucun disque disponible")
+            self.dest_warning_var.set("Aucun disque disponible")
             return
-        
-        # Populate listboxes
+
         for disk in self.disks:
             device_name = disk['device'].replace('/dev/', '')
             base_device = get_base_disk(device_name)
-            
             try:
                 disk_serial = get_disk_serial(device_name)
                 is_device_ssd = is_ssd(device_name)
-                ssd_indicator = " (Electronic)" if is_device_ssd else " (Mechanic)"
-                
-                # Check if this is an active disk
+                ssd_indicator = " (Électronique)" if is_device_ssd else " (Mécanique)"
                 is_active = base_device in self.active_disks
-                active_indicator = " [ACTIVE - UNAVAILABLE]" if is_active else ""
-                
+                active_indicator = " [ACTIF - INDISPONIBLE]" if is_active else ""
                 disk_info = f"{disk_serial}{ssd_indicator} - {disk['size']}{active_indicator}"
-                
-                # Add to source listbox (disable active disks)
                 self.source_listbox.insert(tk.END, disk_info)
                 if is_active:
-                    # Change color for active disks
                     self.source_listbox.itemconfig(tk.END, {'fg': 'red'})
-                
-                # Add to destination listbox (disable active disks)
                 self.dest_listbox.insert(tk.END, disk_info)
                 if is_active:
-                    # Change color for active disks
                     self.dest_listbox.itemconfig(tk.END, {'fg': 'red'})
-                    
             except (OSError, IOError) as e:
-                self.update_log(f"I/O error getting info for {device_name}: {str(e)}")
+                self.update_log(f"Erreur d'E/S lors de la récupération des infos pour {device_name} : {str(e)}")
             except (CalledProcessError, subprocess.SubprocessError) as e:
-                self.update_log(f"Command error getting info for {device_name}: {str(e)}")
+                self.update_log(f"Erreur de commande lors de la récupération des infos pour {device_name} : {str(e)}")
             except (ValueError, TypeError) as e:
-                self.update_log(f"Data error getting info for {device_name}: {str(e)}")
+                self.update_log(f"Erreur de données lors de la récupération des infos pour {device_name} : {str(e)}")
             except FileNotFoundError as e:
-                self.update_log(f"File not found error for {device_name}: {str(e)}")
+                self.update_log(f"Fichier introuvable pour {device_name} : {str(e)}")
             except PermissionError as e:
-                self.update_log(f"Permission error for {device_name}: {str(e)}")
-        
-        # Update warning messages
+                self.update_log(f"Problème de permission pour {device_name} : {str(e)}")
+
         if self.active_disks:
-            warning_msg = f"WARNING: Active system disks ({', '.join(self.active_disks)}) cannot be selected"
+            warning_msg = f"ATTENTION : Les disques système actifs ({', '.join(self.active_disks)}) ne peuvent pas être sélectionnés"
             self.source_warning_var.set(warning_msg)
             self.dest_warning_var.set(warning_msg)
         else:
             self.source_warning_var.set("")
             self.dest_warning_var.set("")
-        
+
         self.update_source_dest_info()
-        self.update_log(f"Found {len(self.disks)} disks")
-    
+        self.update_log(f"{len(self.disks)} disque(s) trouvé(s)")
+
     def on_source_select(self, event) -> None:
-        """Handle source disk selection"""
         selection = self.source_listbox.curselection()
         if selection:
             index = selection[0]
@@ -272,20 +211,15 @@ class DiskClonerGUI:
                 disk = self.disks[index]
                 device_name = disk['device'].replace('/dev/', '')
                 base_device = get_base_disk(device_name)
-                
-                # Check if this is an active disk
                 if base_device in self.active_disks:
-                    messagebox.showwarning("Invalid Selection", 
-                                         "Cannot select active system disk as source!")
+                    messagebox.showwarning("Sélection invalide", "Impossible de sélectionner un disque système actif comme source !")
                     self.source_listbox.selection_clear(0, tk.END)
                     return
-                
                 self.source_disk_var.set(disk['device'])
                 self.update_source_dest_info()
                 self.update_dest_availability()
-    
+
     def on_dest_select(self, event) -> None:
-        """Handle destination disk selection"""
         selection = self.dest_listbox.curselection()
         if selection:
             index = selection[0]
@@ -293,49 +227,35 @@ class DiskClonerGUI:
                 disk = self.disks[index]
                 device_name = disk['device'].replace('/dev/', '')
                 base_device = get_base_disk(device_name)
-                
-                # Check if this is an active disk
                 if base_device in self.active_disks:
-                    messagebox.showwarning("Invalid Selection", 
-                                         "Cannot select active system disk as destination!")
+                    messagebox.showwarning("Sélection invalide", "Impossible de sélectionner un disque système actif comme destination !")
                     self.dest_listbox.selection_clear(0, tk.END)
                     return
-                
-                # Check if this is the same as source
                 if disk['device'] == self.source_disk_var.get():
-                    messagebox.showwarning("Invalid Selection", 
-                                         "Source and destination cannot be the same disk!")
+                    messagebox.showwarning("Sélection invalide", "La source et la destination ne peuvent pas être le même disque !")
                     self.dest_listbox.selection_clear(0, tk.END)
                     return
-                
                 self.dest_disk_var.set(disk['device'])
                 self.update_source_dest_info()
-    
+
     def update_dest_availability(self) -> None:
-        """Update destination listbox to disable source disk"""
         source_device = self.source_disk_var.get()
         if not source_device:
             return
-        
-        # Find the index of the source device in the destination list
         for i, disk in enumerate(self.disks):
             if disk['device'] == source_device:
-                # Update the item text to show it's unavailable
                 current_text = self.dest_listbox.get(i)
-                if "[SOURCE - UNAVAILABLE]" not in current_text:
-                    new_text = current_text.replace("[ACTIVE - UNAVAILABLE]", "").strip()
-                    new_text += " [SOURCE - UNAVAILABLE]"
+                if "[SOURCE - INDISPONIBLE]" not in current_text:
+                    new_text = current_text.replace("[ACTIF - INDISPONIBLE]", "").strip()
+                    new_text += " [SOURCE - INDISPONIBLE]"
                     self.dest_listbox.delete(i)
                     self.dest_listbox.insert(i, new_text)
                     self.dest_listbox.itemconfig(i, {'fg': 'orange'})
                 break
-    
+
     def update_source_dest_info(self) -> None:
-        """Update the information display for source and destination disks"""
         source_device = self.source_disk_var.get()
         dest_device = self.dest_disk_var.get()
-        
-        # Update source info
         if source_device:
             source_disk = next((d for d in self.disks if d['device'] == source_device), None)
             if source_disk:
@@ -344,22 +264,22 @@ class DiskClonerGUI:
                     disk_serial = get_disk_serial(device_name)
                     is_device_ssd = is_ssd(device_name)
                     disk_type = "SSD" if is_device_ssd else "HDD"
-                    info = f"Selected: {disk_serial}\nType: {disk_type}\nSize: {source_disk['size']}\nModel: {source_disk['model']}"
+                    info = f" Sélectionné : {disk_serial}\nType : {disk_type}\nTaille : {source_disk['size']}\nModèle : {source_disk['model']}"
                     self.source_info_var.set(info)
                 except (OSError, IOError) as e:
-                    self.source_info_var.set(f"Selected: {source_device}\nI/O error getting details: {str(e)}")
+                    self.source_info_var.set(f"Sélectionné : {source_device}\nErreur d’E/S lors de la récupération des détails : {str(e)}")
                 except (CalledProcessError, subprocess.SubprocessError) as e:
-                    self.source_info_var.set(f"Selected: {source_device}\nCommand error getting details: {str(e)}")
+                    self.source_info_var.set(f"Sélectionné : {source_device}\nErreur de commande lors de la récupération des détails : {str(e)}")
                 except (ValueError, TypeError) as e:
-                    self.source_info_var.set(f"Selected: {source_device}\nData error getting details: {str(e)}")
+                    self.source_info_var.set(f"Sélectionné : {source_device}\nErreur de données lors de la récupération des détails : {str(e)}")
                 except FileNotFoundError as e:
-                    self.source_info_var.set(f"Selected: {source_device}\nFile not found: {str(e)}")
+                    self.source_info_var.set(f"Sélectionné : {source_device}\nFichier introuvable : {str(e)}")
                 except PermissionError as e:
-                    self.source_info_var.set(f"Selected: {source_device}\nPermission denied: {str(e)}")
+                    self.source_info_var.set(f"Sélectionné : {source_device}\nPermission refusée : {str(e)}")
+            else:
+                self.source_info_var.set("Aucun disque source sélectionné")
         else:
-            self.source_info_var.set("No source disk selected")
-        
-        # Update destination info
+            self.source_info_var.set("Aucun disque source sélectionné")
         if dest_device:
             dest_disk = next((d for d in self.disks if d['device'] == dest_device), None)
             if dest_disk:
@@ -368,156 +288,132 @@ class DiskClonerGUI:
                     disk_serial = get_disk_serial(device_name)
                     is_device_ssd = is_ssd(device_name)
                     disk_type = "SSD" if is_device_ssd else "HDD"
-                    info = f"Selected: {disk_serial}\nType: {disk_type}\nSize: {dest_disk['size']}\nModel: {dest_disk['model']}"
+                    info = f"Sélectionné : {disk_serial}\nType : {disk_type}\nTaille : {dest_disk['size']}\nModèle : {dest_disk['model']}"
                     self.dest_info_var.set(info)
                 except (OSError, IOError) as e:
-                    self.dest_info_var.set(f"Selected: {dest_device}\nI/O error getting details: {str(e)}")
+                    self.dest_info_var.set(f"Sélectionné : {dest_device}\nErreur d’E/S lors de la récupération des détails : {str(e)}")
                 except (CalledProcessError, subprocess.SubprocessError) as e:
-                    self.dest_info_var.set(f"Selected: {dest_device}\nCommand error getting details: {str(e)}")
+                    self.dest_info_var.set(f"Sélectionné : {dest_device}\nErreur de commande lors de la récupération des détails : {str(e)}")
                 except (ValueError, TypeError) as e:
-                    self.dest_info_var.set(f"Selected: {dest_device}\nData error getting details: {str(e)}")
+                    self.dest_info_var.set(f"Sélectionné : {dest_device}\nErreur de données lors de la récupération des détails : {str(e)}")
                 except FileNotFoundError as e:
-                    self.dest_info_var.set(f"Selected: {dest_device}\nFile not found: {str(e)}")
+                    self.dest_info_var.set(f"Sélectionné : {dest_device}\nFichier introuvable : {str(e)}")
                 except PermissionError as e:
-                    self.dest_info_var.set(f"Selected: {dest_device}\nPermission denied: {str(e)}")
+                    self.dest_info_var.set(f"Sélectionné : {dest_device}\nPermission refusée : {str(e)}")
+            else:
+                self.dest_info_var.set("Aucun disque de destination sélectionné")
         else:
-            self.dest_info_var.set("No destination disk selected")
-    
+            self.dest_info_var.set("Aucun disque de destination sélectionné")
+
     def start_clone(self) -> None:
-        """Start the disk cloning process"""
         source_device = self.source_disk_var.get()
         dest_device = self.dest_disk_var.get()
-        
         if not source_device or not dest_device:
-            messagebox.showwarning("Selection Required", 
-                                 "Please select both source and destination disks!")
+            messagebox.showwarning("Sélection requise", "Veuillez sélectionner à la fois le disque source et le disque de destination !")
             return
-        
-        # Get disk information for confirmation
         source_disk = next((d for d in self.disks if d['device'] == source_device), None)
         dest_disk = next((d for d in self.disks if d['device'] == dest_device), None)
-        
         if not source_disk or not dest_disk:
-            messagebox.showerror("Error", "Could not find disk information!")
+            messagebox.showerror("Erreur", "Impossible de trouver les informations du disque !")
             return
-        
-        # Get disk serials for display
         try:
             source_serial = get_disk_serial(source_device.replace('/dev/', ''))
             dest_serial = get_disk_serial(dest_device.replace('/dev/', ''))
-        except (OSError, IOError, CalledProcessError, subprocess.SubprocessError, 
+        except (OSError, IOError, CalledProcessError, subprocess.SubprocessError,
                 FileNotFoundError, PermissionError):
             source_serial = source_device
             dest_serial = dest_device
-        
-        # Show confirmation dialog
-        clone_method = "Full clone (bit-by-bit copy)" if self.clone_method_var.get() == "full" else "Smart clone (used sectors only)"
-        verify_text = "with verification" if self.verify_clone_var.get() else "without verification"
-        
-        confirm_msg = (f"WARNING: This will completely overwrite the destination disk!\n\n"
-                      f"Source: {source_serial} ({source_disk['size']})\n"
-                      f"Destination: {dest_serial} ({dest_disk['size']})\n\n"
-                      f"Method: {clone_method} {verify_text}\n\n"
-                      f"ALL DATA ON THE DESTINATION DISK WILL BE LOST!\n\n"
-                      f"Are you sure you want to continue?")
-        
-        if not messagebox.askyesno("Confirm Clone Operation", confirm_msg):
+
+        clone_method = "Clonage complet (bit-à-bit)" if self.clone_method_var.get() == "full" else "Clonage intelligent (seulement les secteurs utilisés)"
+        verify_text = "avec vérification" if self.verify_clone_var.get() else "sans vérification"
+        confirm_msg = (f"ATTENTION : Ceci va complètement écraser le disque de destination !\n\n"
+                       f"Source : {source_serial} ({source_disk['size']})\n"
+                       f"Destination : {dest_serial} ({dest_disk['size']})\n\n"
+                       f"Méthode : {clone_method} {verify_text}\n\n"
+                       f"TOUTES LES DONNÉES SUR LE DISQUE DE DESTINATION SERONT PERDUES !\n\n"
+                       f"Êtes-vous sûr de vouloir continuer ?")
+        if not messagebox.askyesno("Confirmer l’opération de clonage", confirm_msg):
             return
-        
-        # Final confirmation
-        if not messagebox.askyesno("FINAL WARNING", 
-                                  "This is your final warning!\n\n"
-                                  "The destination disk will be completely overwritten.\n\n"
-                                  "Do you want to proceed?"):
+        if not messagebox.askyesno("AVERTISSEMENT FINAL",
+                                   "Ceci est votre dernier avertissement !\n\n"
+                                   "Le disque de destination sera complètement écrasé.\n\n"
+                                   "Voulez-vous continuer ?"):
             return
-        
-        # Start cloning in a separate thread
         self.is_cloning = True
         self.start_button.configure(state=tk.DISABLED)
         self.stop_button.configure(state=tk.NORMAL)
         self.progress_var.set(0)
-        
-        clone_thread = threading.Thread(target=self.clone_disk_thread, 
-                                       args=(source_device, dest_device), daemon=True)
+        clone_thread = threading.Thread(target=self.clone_disk_thread,
+            args=(source_device, dest_device), daemon=True)
         clone_thread.start()
-    
+
     def clone_disk_thread(self, source_device: str, dest_device: str) -> None:
-        """Thread function for disk cloning"""
         try:
             method = self.clone_method_var.get()
             verify = self.verify_clone_var.get()
-            
-            self.update_log(f"Starting clone operation: {source_device} -> {dest_device}")
-            self.status_var.set("Initializing clone operation...")
-            
+            self.update_log(f"Démarrage de l’opération de clonage : {source_device} -> {dest_device}")
+            self.status_var.set("Initialisation de l’opération de clonage ...")
             if method == "full":
                 self.full_clone(source_device, dest_device)
             else:
                 self.smart_clone(source_device, dest_device)
-            
             if verify and self.is_cloning:
                 self.verify_clone(source_device, dest_device)
-            
             if self.is_cloning:
-                self.status_var.set("Clone operation completed successfully!")
-                self.update_log("Clone operation completed successfully!")
-                messagebox.showinfo("Success", "Disk clone completed successfully!")
-        
+                self.status_var.set("Opération de clonage terminée avec succès !")
+                self.update_log("Opération de clonage terminée avec succès !")
+                messagebox.showinfo("Succès", "Clonage du disque terminé avec succès !")
         except (OSError, IOError) as e:
-            error_msg = f"I/O error during clone operation: {str(e)}"
-            self.status_var.set("Clone operation failed - I/O error!")
+            error_msg = f"Erreur d’E/S lors de l’opération de clonage : {str(e)}"
+            self.status_var.set("Échec de l’opération de clonage - Erreur d’E/S !")
             self.update_log(error_msg)
             log_error(error_msg)
-            messagebox.showerror("I/O Error", error_msg)
+            messagebox.showerror("Erreur d’E/S", error_msg)
         except (CalledProcessError, subprocess.SubprocessError) as e:
-            error_msg = f"Command execution failed during clone: {str(e)}"
-            self.status_var.set("Clone operation failed - Command error!")
+            error_msg = f"L’exécution de la commande a échoué lors du clonage : {str(e)}"
+            self.status_var.set("Échec de l’opération de clonage - Erreur de commande !")
             self.update_log(error_msg)
             log_error(error_msg)
-            messagebox.showerror("Command Error", error_msg)
+            messagebox.showerror("Erreur de commande", error_msg)
         except FileNotFoundError as e:
-            error_msg = f"Required file or command not found: {str(e)}"
-            self.status_var.set("Clone operation failed - File not found!")
+            error_msg = f"Fichier ou commande introuvable requis : {str(e)}"
+            self.status_var.set("Échec de l’opération de clonage - Fichier introuvable !")
             self.update_log(error_msg)
             log_error(error_msg)
-            messagebox.showerror("File Not Found", error_msg)
+            messagebox.showerror("Fichier introuvable", error_msg)
         except PermissionError as e:
-            error_msg = f"Permission denied during clone operation: {str(e)}"
-            self.status_var.set("Clone operation failed - Permission denied!")
+            error_msg = f"Permission refusée lors de l’opération de clonage : {str(e)}"
+            self.status_var.set("Échec de l’opération de clonage - Permission refusée !")
             self.update_log(error_msg)
             log_error(error_msg)
-            messagebox.showerror("Permission Error", error_msg)
+            messagebox.showerror("Erreur de permission", error_msg)
         except TimeoutExpired as e:
-            error_msg = f"Clone operation timed out: {str(e)}"
-            self.status_var.set("Clone operation failed - Timeout!")
+            error_msg = f"Délai dépassé pour l’opération de clonage : {str(e)}"
+            self.status_var.set("Échec de l’opération de clonage - Délai dépassé !")
             self.update_log(error_msg)
             log_error(error_msg)
-            messagebox.showerror("Timeout Error", error_msg)
+            messagebox.showerror("Erreur de délai", error_msg)
         except KeyboardInterrupt:
-            error_msg = "Clone operation interrupted by user"
-            self.status_var.set("Clone operation interrupted!")
+            error_msg = "Opération de clonage interrompue par l’utilisateur"
+            self.status_var.set("Opération de clonage interrompue !")
             self.update_log(error_msg)
             log_error(error_msg)
-            messagebox.showwarning("Interrupted", error_msg)
+            messagebox.showwarning("Interrompu", error_msg)
         except MemoryError as e:
-            error_msg = f"Insufficient memory for clone operation: {str(e)}"
-            self.status_var.set("Clone operation failed - Memory error!")
+            error_msg = f"Mémoire insuffisante pour l’opération de clonage : {str(e)}"
+            self.status_var.set("Échec de l’opération de clonage - Erreur mémoire !")
             self.update_log(error_msg)
             log_error(error_msg)
-            messagebox.showerror("Memory Error", error_msg)
-        
+            messagebox.showerror("Erreur mémoire", error_msg)
         finally:
             self.is_cloning = False
             self.start_button.configure(state=tk.NORMAL)
             self.stop_button.configure(state=tk.DISABLED)
             self.progress_var.set(0)
-    
+
     def full_clone(self, source: str, dest: str) -> None:
-        """Perform full disk clone using dd"""
-        self.update_log("Starting full clone (bit-by-bit copy)...")
-        self.status_var.set("Performing full clone...")
-        
-        # Use dd with progress monitoring
+        self.update_log("Démarrage du clonage complet (bit-à-bit)...")
+        self.status_var.set("Clonage complet en cours...")
         block_size = "1M"
         cmd = [
             "dd",
@@ -527,126 +423,102 @@ class DiskClonerGUI:
             "conv=fdatasync",
             "status=progress"
         ]
-        
         def progress_callback():
             current_progress = self.progress_var.get()
-            if current_progress < 90:  # Don't reach 100% until actually done
+            if current_progress < 90:
                 self.progress_var.set(current_progress + 1)
-        
         def stop_flag():
             return not self.is_cloning
-        
         try:
             run_command_with_progress(cmd, progress_callback, stop_flag)
             self.progress_var.set(100)
-            self.update_log("Full clone completed successfully")
+            self.update_log("Clonage complet terminé avec succès")
         except (CalledProcessError, subprocess.SubprocessError) as e:
-            raise subprocess.SubprocessError(f"Full clone command failed: {str(e)}")
+            raise subprocess.SubprocessError(f"Commande de clonage complet échouée : {str(e)}")
         except (OSError, IOError) as e:
-            raise IOError(f"I/O error during full clone: {str(e)}")
+            raise IOError(f"Erreur d’E/S lors du clonage complet : {str(e)}")
         except FileNotFoundError as e:
-            raise FileNotFoundError(f"dd command not found: {str(e)}")
+            raise FileNotFoundError(f"Commande dd introuvable : {str(e)}")
         except PermissionError as e:
-            raise PermissionError(f"Permission denied during full clone: {str(e)}")
+            raise PermissionError(f"Permission refusée lors du clonage complet : {str(e)}")
         except TimeoutExpired as e:
-            raise TimeoutExpired(cmd, None, f"Full clone timed out: {str(e)}")
-    
+            raise TimeoutExpired(cmd, None, f"Délai dépassé lors du clonage complet : {str(e)}")
+
     def smart_clone(self, source: str, dest: str) -> None:
-        """Perform smart clone using partclone or similar"""
-        self.update_log("Starting smart clone (filesystem-aware copy)...")
-        self.status_var.set("Performing smart clone...")
-        
-        # For now, fallback to dd - in a real implementation, you'd use partclone
-        # or similar tools that understand filesystem structures
-        self.update_log("Note: Smart clone not fully implemented, using dd...")
+        self.update_log("Démarrage du clonage intelligent (copie consciente du système de fichiers)...")
+        self.status_var.set("Clonage intelligent en cours...")
+        self.update_log("Note : Le clonage intelligent n’est pas encore totalement implémenté, utilisation de dd...")
         self.full_clone(source, dest)
-    
+
     def verify_clone(self, source: str, dest: str) -> None:
-        """Verify the cloned disk"""
         if not self.is_cloning:
             return
-            
-        self.update_log("Starting clone verification...")
-        self.status_var.set("Verifying clone...")
+        self.update_log("Démarrage de la vérification du clone...")
+        self.status_var.set("Vérification du clone en cours...")
         self.progress_var.set(0)
-        
         cmd = [
             "cmp",
             source,
             dest
         ]
-        
         def progress_callback():
             current_progress = self.progress_var.get()
             if current_progress < 90:
                 self.progress_var.set(current_progress + 2)
-        
         def stop_flag():
             return not self.is_cloning
-        
         try:
             run_command_with_progress(cmd, progress_callback, stop_flag)
             self.progress_var.set(100)
-            self.update_log("Clone verification completed successfully - disks are identical")
+            self.update_log("Vérification du clone terminée avec succès - les disques sont identiques")
         except CalledProcessError as e:
             if e.returncode == 1:
-                self.update_log("WARNING: Clone verification failed - disks differ!")
-                messagebox.showwarning("Verification Failed", 
-                                     "Clone verification failed! The disks are not identical.")
+                self.update_log("ATTENTION : Échec de la vérification du clone - les disques diffèrent !")
+                messagebox.showwarning("Vérification échouée", "Échec de la vérification du clone ! Les disques ne sont pas identiques.")
             else:
-                raise CalledProcessError(e.returncode, cmd, f"Verification command failed: {e.stderr}")
+                raise CalledProcessError(e.returncode, cmd, f"Échec de la commande de vérification : {e.stderr}")
         except (OSError, IOError) as e:
-            raise IOError(f"I/O error during verification: {str(e)}")
+            raise IOError(f"Erreur d’E/S lors de la vérification : {str(e)}")
         except FileNotFoundError as e:
-            raise FileNotFoundError(f"cmp command not found: {str(e)}")
+            raise FileNotFoundError(f"Commande cmp introuvable : {str(e)}")
         except PermissionError as e:
-            raise PermissionError(f"Permission denied during verification: {str(e)}")
+            raise PermissionError(f"Permission refusée lors de la vérification : {str(e)}")
         except TimeoutExpired as e:
-            raise TimeoutExpired(cmd, None, f"Verification timed out: {str(e)}")
-    
+            raise TimeoutExpired(cmd, None, f"Délai dépassé lors de la vérification : {str(e)}")
+
     def stop_clone(self) -> None:
-        """Stop the cloning process"""
         if self.is_cloning:
-            if messagebox.askyesno("Confirm Stop", 
-                                  "Are you sure you want to stop the clone operation?\n\n"
-                                  "This will leave the destination disk in an incomplete state."):
+            if messagebox.askyesno("Confirmer l’arrêt",
+                "Voulez-vous vraiment arrêter l’opération de clonage ?\n\n"
+                "Cela laissera le disque de destination dans un état incomplet."):
                 self.is_cloning = False
-                self.update_log("Clone operation stopped by user")
-                self.status_var.set("Clone operation stopped")
-    
+                self.update_log("Opération de clonage arrêtée par l’utilisateur")
+                self.status_var.set("Opération de clonage arrêtée")
+
     def toggle_fullscreen(self) -> None:
-        """Toggle fullscreen mode"""
         is_fullscreen = self.root.attributes("-fullscreen")
         self.root.attributes("-fullscreen", not is_fullscreen)
-    
+
     def exit_application(self) -> None:
-        """Exit the application"""
         if self.is_cloning:
-            if not messagebox.askyesno("Clone in Progress", 
-                                      "A clone operation is in progress.\n\n"
-                                      "Are you sure you want to exit?"):
+            if not messagebox.askyesno("Clonage en cours",
+                                       "Une opération de clonage est en cours ... Voulez-vous vraiment quitter ?"):
                 return
             self.is_cloning = False
-        
-        log_info("Disk Cloner application closed by user")
+        log_info("L’application de clonage de disque a été fermée par l'utilisateur")
         self.root.destroy()
-    
+
     def update_log(self, message: str) -> None:
-        """Update the log display"""
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         log_message = f"[{timestamp}] {message}\n"
-        
         self.log_text.insert(tk.END, log_message)
         self.log_text.see(tk.END)
         self.root.update_idletasks()
 
 def main():
-    """Main function to run the disk cloner"""
-    # Check for root privileges
     if os.geteuid() != 0:
-        print("This program must be run as root!")
+        print("Ce programme doit être lancé en tant que root !")
         sys.exit(1)
-    
     root = tk.Tk()
     app = DiskClonerGUI(root)
     root.mainloop()
