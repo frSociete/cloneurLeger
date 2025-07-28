@@ -1,7 +1,7 @@
 # Define variables
 SCRIPT_XFCE := ./forgeIsoXfce.sh
 SCRIPT_KDE := ./forgeIsoKde.sh
-BUILD_DIR := $(HOME)/debian-live-build
+BUILD_DIR := $(PWD)/debian-live-build
 
 .PHONY: all clean
 
