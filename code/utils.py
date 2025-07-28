@@ -165,7 +165,7 @@ def get_active_disk():
                         for parent in parent_devices:
                             if parent.strip():
                                 devices.add(get_base_disk(parent.strip()))
-                except (FileNotFoundError, CalledProcessError):
+                except (FileNotFoundError, subprocess.CalledProcessError):
                     pass
             else:
                 match = re.search(r'/dev/([a-zA-Z]+\d*[a-zA-Z]*\d*)', root_device)
